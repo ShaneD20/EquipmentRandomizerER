@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
@@ -12,14 +11,23 @@ namespace SoulsFormats
     /// <summary>
     /// An extended reader for binary data supporting big and little endianness, value assertions, and arrays.
     /// </summary>
-    public class BinaryReaderEx
+    public class BinaryReaderEx : IDisposable
     {
         /// <summary>
-        /// boolean on if the reader is flexible.
+        /// Skips various assertions in order to load a file despite potential mismatches.
+        /// This is mainly a tool to circumvent malicious format hacking by modders who try to
+        /// "obfuscate" their files. This should not be set to TRUE for most purposes unless
+        /// you are extremely sure what you are doing.
         /// </summary>
-        public static bool IsFlexible {  get; set; }
+        public static bool IsFlexible { get; set; }
+
         private BinaryReader br;
         private Stack<long> steps;
+
+        /// <summary>
+        /// Whether or not the <see cref="BinaryReaderEx"/> has been disposed.
+        /// </summary>
+        public bool IsDisposed { get; private set; }
 
         /// <summary>
         /// Interpret values as big-endian if set, or little-endian if not.
@@ -56,19 +64,24 @@ namespace SoulsFormats
         public long Length => Stream.Length;
 
         /// <summary>
+        /// Initializes a new BinaryReaderEx reading from the specified file.
+        /// </summary>
+        public BinaryReaderEx(bool bigEndian, string path) : this(bigEndian, File.OpenRead(path), false) { }
+
+        /// <summary>
         /// Initializes a new BinaryReaderEx reading from the specified byte array.
         /// </summary>
-        public BinaryReaderEx(bool bigEndian, byte[] input) : this(bigEndian, new MemoryStream(input)) { }
+        public BinaryReaderEx(bool bigEndian, byte[] input) : this(bigEndian, new MemoryStream(input), false) { }
 
         /// <summary>
         /// Initializes a new BinaryReaderEx reading from the specified stream.
         /// </summary>
-        public BinaryReaderEx(bool bigEndian, Stream stream)
+        public BinaryReaderEx(bool bigEndian, Stream stream, bool leaveOpen = false)
         {
             BigEndian = bigEndian;
             steps = new Stack<long>();
             Stream = stream;
-            br = new BinaryReader(stream);
+            br = new BinaryReader(stream, Encoding.UTF8, leaveOpen);
         }
 
         /// <summary>
@@ -335,14 +348,12 @@ namespace SoulsFormats
         /// <summary>
         /// Reads a two-byte signed integer.
         /// </summary>
-        public unsafe short ReadInt16()
+        public short ReadInt16()
         {
             if (BigEndian)
-            {
-                short i = br.ReadInt16();
-                return BinaryPrimitives.ReadInt16BigEndian(new ReadOnlySpan<byte>((byte*)&i, 2));
-            }
-            return br.ReadInt16();
+                return BitConverter.ToInt16(ReadReversedBytes(2), 0);
+            else
+                return br.ReadInt16();
         }
 
         /// <summary>
@@ -385,14 +396,12 @@ namespace SoulsFormats
         /// <summary>
         /// Reads a two-byte unsigned integer.
         /// </summary>
-        public unsafe ushort ReadUInt16()
+        public ushort ReadUInt16()
         {
             if (BigEndian)
-            {
-                ushort i = br.ReadUInt16();
-                return BinaryPrimitives.ReadUInt16BigEndian(new ReadOnlySpan<byte>((byte*)&i, 2));
-            }
-            return br.ReadUInt16();
+                return BitConverter.ToUInt16(ReadReversedBytes(2), 0);
+            else
+                return br.ReadUInt16();
         }
 
         /// <summary>
@@ -435,14 +444,12 @@ namespace SoulsFormats
         /// <summary>
         /// Reads a four-byte signed integer.
         /// </summary>
-        public unsafe int ReadInt32()
+        public int ReadInt32()
         {
             if (BigEndian)
-            {
-                int i = br.ReadInt32();
-                return BinaryPrimitives.ReadInt32BigEndian(new ReadOnlySpan<byte>((byte*)&i, 4));
-            }
-            return br.ReadInt32();
+                return BitConverter.ToInt32(ReadReversedBytes(4), 0);
+            else
+                return br.ReadInt32();
         }
 
         /// <summary>
@@ -485,14 +492,12 @@ namespace SoulsFormats
         /// <summary>
         /// Reads a four-byte unsigned integer.
         /// </summary>
-        public unsafe uint ReadUInt32()
+        public uint ReadUInt32()
         {
             if (BigEndian)
-            {
-                uint i = br.ReadUInt32();
-                return BinaryPrimitives.ReadUInt32BigEndian(new ReadOnlySpan<byte>((byte*)&i, 4));
-            }
-            return br.ReadUInt32();
+                return BitConverter.ToUInt32(ReadReversedBytes(4), 0);
+            else
+                return br.ReadUInt32();
         }
 
         /// <summary>
@@ -535,14 +540,12 @@ namespace SoulsFormats
         /// <summary>
         /// Reads an eight-byte signed integer.
         /// </summary>
-        public unsafe long ReadInt64()
+        public long ReadInt64()
         {
             if (BigEndian)
-            {
-                long i = br.ReadInt64();
-                return BinaryPrimitives.ReadInt64BigEndian(new ReadOnlySpan<byte>((byte*)&i, 8));
-            }
-            return br.ReadInt64();
+                return BitConverter.ToInt64(ReadReversedBytes(8), 0);
+            else
+                return br.ReadInt64();
         }
 
         /// <summary>
@@ -585,14 +588,12 @@ namespace SoulsFormats
         /// <summary>
         /// Reads an eight-byte unsigned integer.
         /// </summary>
-        public unsafe ulong ReadUInt64()
+        public ulong ReadUInt64()
         {
             if (BigEndian)
-            {
-                ulong i = br.ReadUInt64();
-                return BinaryPrimitives.ReadUInt64BigEndian(new ReadOnlySpan<byte>((byte*)&i, 8));
-            }
-            return br.ReadUInt64();
+                return BitConverter.ToUInt64(ReadReversedBytes(8), 0);
+            else
+                return br.ReadUInt64();
         }
 
         /// <summary>
@@ -691,14 +692,12 @@ namespace SoulsFormats
         /// <summary>
         /// Reads a four-byte floating point number.
         /// </summary>
-        public unsafe float ReadSingle()
+        public float ReadSingle()
         {
             if (BigEndian)
-            {
-                var i = br.ReadUInt32();
-                return BinaryPrimitives.ReadSingleBigEndian(new ReadOnlySpan<byte>((byte*)&i, 4));
-            }
-            return br.ReadSingle();
+                return BitConverter.ToSingle(ReadReversedBytes(4), 0);
+            else
+                return br.ReadSingle();
         }
 
         /// <summary>
@@ -741,14 +740,12 @@ namespace SoulsFormats
         /// <summary>
         /// Reads an eight-byte floating point number.
         /// </summary>
-        public unsafe double ReadDouble()
+        public double ReadDouble()
         {
             if (BigEndian)
-            {
-                ulong i = br.ReadUInt64();
-                return BinaryPrimitives.ReadDoubleBigEndian(new ReadOnlySpan<byte>((byte*)&i, 8));
-            }
-            return br.ReadDouble();
+                return BitConverter.ToDouble(ReadReversedBytes(8), 0);
+            else
+                return br.ReadDouble();
         }
 
         /// <summary>
@@ -1004,15 +1001,13 @@ namespace SoulsFormats
         /// </summary>
         public string ReadUTF16()
         {
-            List<byte> bytes = new List<byte>(64);
-            byte a = ReadByte();
-            byte b = ReadByte();
-            while (a != 0 || b != 0)
+            List<byte> bytes = new List<byte>();
+            byte[] pair = ReadBytes(2);
+            while (pair[0] != 0 || pair[1] != 0)
             {
-                bytes.Add(a);
-                bytes.Add(b);
-                a = ReadByte(); 
-                b = ReadByte();
+                bytes.Add(pair[0]);
+                bytes.Add(pair[1]);
+                pair = ReadBytes(2);
             }
 
             if (BigEndian)
@@ -1105,6 +1100,30 @@ namespace SoulsFormats
         }
 
         /// <summary>
+        /// Reads a Quaternion of floating point numbers in XYZW order.
+        /// </summary>
+        public Quaternion ReadQuaternion()
+        {
+            float x = ReadSingle();
+            float y = ReadSingle();
+            float z = ReadSingle();
+            float w = ReadSingle();
+            return new Quaternion(x, y, z, w);
+        }
+
+        /// <summary>
+        /// Reads a Vector3 from an int. Expects a Vector3 of floating points compressed to 11, 11, and 10 bits per float.
+        /// </summary>
+        public Vector3 Read11_11_10Vector3()
+        {
+            int vector = ReadInt32();
+            int x = vector << 21 >> 21;
+            int y = vector << 10 >> 21;
+            int z = vector << 0 >> 22;
+            return new Vector3(x / (float)0b11_1111_1111, y / (float)0b11_1111_1111, z / (float)0b1_1111_1111);
+        }
+
+        /// <summary>
         /// Read length number of bytes and assert that they all match the given value.
         /// </summary>
         public void AssertPattern(int length, byte pattern)
@@ -1164,6 +1183,36 @@ namespace SoulsFormats
             byte a = br.ReadByte();
             return Color.FromArgb(a, r, g, b);
         }
+        #endregion
+
+        #region IDisposable Support
+
+        /// <summary>
+        /// Performs application-defined tasks associated with freeing, releasing, or resetting unmanaged resources.
+        /// </summary>
+        protected virtual void Dispose(bool disposing)
+        {
+            if (!IsDisposed)
+            {
+                if (disposing)
+                {
+                    br.Dispose();
+                    steps.Clear();
+                }
+
+                IsDisposed = true;
+            }
+        }
+
+        /// <summary>
+        /// Performs application-defined tasks associated with freeing, releasing, or resetting unmanaged resources.
+        /// </summary>
+        public void Dispose()
+        {
+            Dispose(disposing: true);
+            GC.SuppressFinalize(this);
+        }
+
         #endregion
     }
 }

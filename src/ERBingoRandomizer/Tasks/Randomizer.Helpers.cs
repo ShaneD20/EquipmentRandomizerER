@@ -442,7 +442,6 @@ public partial class Randomizer
         _goodsFmg[2007200] = "Rotten Butterflies";
         _goodsFmg[2007300] = "Midra's Flame of Frenzy";
         _goodsFmg[2006700] = "Light of Miquella";
-
         _goodsFmg[2006800] = "Roar of Rugalea";
         _goodsFmg[2004500] = "Glintstone Nail";
     }
